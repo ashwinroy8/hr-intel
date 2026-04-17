@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Settings — HR Intel{% endblock %}
+
+{% block body %}
+<div class="max-w-3xl mx-auto px-4 py-8">
+
+  <h1 class="text-2xl font-bold text-gray-900 mb-1">Settings</h1>
+  <p class="text-sm text-gray-500 mb-8">Configure your company profile and news schedule.</p>
+
+  {% if request.query_params.get('saved') %}
+  <div class="mb-6 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
+    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+    </svg>
+    Settings saved successfully!
+  </div>
+  {% endif %}
+
+  <!-- Company Profile -->
+  <form method="post" action="/settings" class="space-y-6">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <h2 class="font-semibold text-gray-900 text-base mb-4 flex items-center gap-2">
+        <svg class="w-5 h-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+        </svg>
+        Company Profile for AI Outreach Emails
+      </h2>
+      <p class="text-xs text-gray-500 mb-5">Claude uses this context to write personalised outreach emails on your behalf.</p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Company Name</label>
+          <input type="text" name="company_name" value="{{ settings.company_name }}"
+                 class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                 placeholder="e.g. Learnify" required />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Company Description & Value Proposition</label>
+          <p class="text-xs text-gray-400 mb-2">Be specific — Claude uses this to craft relevant emails. Include what you do, who you serve, and key differentiators.</p>
+          <textarea name="company_context" rows="7" required
+                    class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+                    placeholder="e.g. We are a skilling and employee engagement platform that helps organisations…">{{ settings.company_context }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit"
+              class="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg text-sm transition-colors shadow">
+        Save Settings
+      </button>
+    </div>
+  </form>
+
+  <!-- Schedule Info -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-6">
+    <h2 class="font-semibold text-gray-900 text-base mb-4 flex items-center gap-2">
+      <svg class="w-5 h-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      News Fetch Schedule
+    </h2>
+    <div class="grid grid-cols-2 gap-4 text-sm">
+      <div class="bg-gray-50 rounded-lg p-4">
+        <p class="text-xs text-gray-500 mb-1">Daily fetch</p>
+        <p class="font-semibold text-gray-800">5:30 AM every day</p>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-4">
+        <p class="text-xs text-gray-500 mb-1">Rolling fetch</p>
+        <p class="font-semibold text-gray-800">Every 4 hours</p>
+      </div>
+      {% if next_fetch %}
+      <div class="bg-brand-50 rounded-lg p-4 col-span-2">
+        <p class="text-xs text-gray-500 mb-1">Next scheduled fetch</p>
+        <p class="font-semibold text-brand-700">{{ next_fetch }}</p>
+      </div>
+      {% endif %}
+    </div>
+    <div class="mt-4 pt-4 border-t border-gray-100">
+      <button onclick="refreshNews()"
+              class="px-4 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors">
+        Fetch News Now
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-6">
+    <h2 class="font-semibold text-gray-900 text-base mb-4">Platform Stats</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      {% for label, value in [
+        ('Articles', stats.total_articles),
+        ('People Found', stats.total_people),
+        ('Emails Drafted', stats.emails_drafted),
+        ('Contacted', stats.contacted)
+      ] %}
+      <div class="text-center bg-gray-50 rounded-lg p-4">
+        <p class="text-2xl font-bold text-brand-600">{{ value }}</p>
+        <p class="text-xs text-gray-500 mt-1">{{ label }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

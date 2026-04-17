@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title or 'News Feed' }} — HR Intel{% endblock %}
+
+{% block body %}
+<div class="max-w-7xl mx-auto px-4 py-6">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">{{ page_title or 'HR & L&D News Feed' }}</h1>
+      <p class="text-sm text-gray-500 mt-0.5">India & Middle East · Updated automatically at 5:30 AM daily</p>
+    </div>
+    <button id="refresh-btn" onclick="refreshNews()"
+            class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg shadow transition-colors flex items-center gap-2">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      Refresh News
+    </button>
+  </div>
+
+  <!-- Stats bar -->
+  <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center shadow-sm">
+      <p class="text-2xl font-bold text-brand-600">{{ stats.total_articles }}</p>
+      <p class="text-xs text-gray-500 mt-0.5">Articles</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center shadow-sm">
+      <p class="text-2xl font-bold text-purple-600">{{ stats.total_people }}</p>
+      <p class="text-xs text-gray-500 mt-0.5">People Found</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center shadow-sm">
+      <p class="text-2xl font-bold text-green-600">{{ stats.emails_drafted }}</p>
+      <p class="text-xs text-gray-500 mt-0.5">Emails Drafted</p>
+    </div>
+    <a href="/contacts?status=Contacted" class="bg-white rounded-xl border border-blue-200 p-4 text-center shadow-sm hover:shadow-md transition-shadow">
+      <p class="text-2xl font-bold text-blue-600">{{ pipeline_counts.get('Contacted', 0) }}</p>
+      <p class="text-xs text-gray-500 mt-0.5">Contacted</p>
+    </a>
+    <a href="/contacts?status=Meeting Set" class="bg-white rounded-xl border border-emerald-200 p-4 text-center shadow-sm hover:shadow-md transition-shadow">
+      <p class="text-2xl font-bold text-emerald-600">{{ pipeline_counts.get('Meeting Set', 0) }}</p>
+      <p class="text-xs text-gray-500 mt-0.5">Meetings Set</p>
+    </a>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" action="/dashboard" id="filter-form"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm mb-6 overflow-hidden">
+
+    <!-- Top row: search + dropdowns -->
+    <div class="p-4 flex flex-wrap gap-3 items-end border-b border-gray-100">
+      <div class="flex-1 min-w-[200px]">
+        <label class="block text-xs font-medium text-gray-500 mb-1">Search</label>
+        <input type="text" name="q" value="{{ q }}" placeholder="Search articles…"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Region</label>
+        <select name="region" class="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+          {% for r in ['All', 'India', 'Middle East', 'Global'] %}
+          <option value="{{ r }}" {% if region == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Category</label>
+        <select name="category" class="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+          {% for c in ['All', 'HR', 'L&D'] %}
+          <option value="{{ c }}" {% if category == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg transition-colors">
+        Filter
+      </button>
+      {% if q or region != 'All' or category != 'All' or selected_sources %}
+      <a href="/dashboard" class="px-4 py-2 border border-gray-300 text-gray-600 text-sm rounded-lg hover:bg-gray-50">Clear all</a>
+      {% endif %}
+    </div>
+
+    <!-- Source checkboxes -->
+    {% if all_sources %}
+    <div class="px-4 py-3 bg-gray-50">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filter by Source</span>
+        <div class="flex gap-3">
+          <button type="button" onclick="selectAllSources(true)"
+                  class="text-xs text-brand-600 hover:underline">Select all</button>
+          <button type="button" onclick="selectAllSources(false)"
+                  class="text-xs text-gray-400 hover:underline">Clear</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {% for src in all_sources %}
+        <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border cursor-pointer transition-colors text-xs font-medium select-none
+                      {% if src in selected_sources %}bg-brand-600 text-white border-brand-600{% else %}bg-white text-gray-600 border-gray-300 hover:border-brand-400 hover:text-brand-600{% endif %}">
+          <input type="checkbox" name="source" value="{{ src }}"
+                 {% if src in selected_sources %}checked{% endif %}
+                 class="sr-only source-checkbox"
+                 onchange="this.closest('label').classList.toggle('bg-brand-600', this.checked);
+                           this.closest('label').classList.toggle('text-white', this.checked);
+                           this.closest('label').classList.toggle('border-brand-600', this.checked);
+                           this.closest('label').classList.toggle('bg-white', !this.checked);
+                           this.closest('label').classList.toggle('text-gray-600', !this.checked);
+                           this.closest('label').classList.toggle('border-gray-300', !this.checked);" />
+          {{ src }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+  </form>
+
+  {% if articles %}
+  <!-- Article grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+    {% for article in articles %}
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm card-hover flex flex-col">
+      <div class="p-5 flex-1">
+        <!-- Badges -->
+        <div class="flex flex-wrap gap-1.5 mb-3">
+          <span class="badge {% if article.region == 'India' %}bg-orange-100 text-orange-700{% elif article.region == 'Middle East' %}bg-emerald-100 text-emerald-700{% else %}bg-gray-100 text-gray-500{% endif %}">
+            {{ article.region }}
+          </span>
+          <span class="badge {% if article.category == 'L&D' %}bg-purple-100 text-purple-700{% else %}bg-blue-100 text-blue-700{% endif %}">
+            {{ article.category }}
+          </span>
+          {% if article.people_extracted %}
+          <span class="badge bg-green-100 text-green-700">✓ People found</span>
+          {% endif %}
+        </div>
+
+        <!-- Source + date -->
+        <p class="text-xs text-gray-400 mb-2">
+          {{ article.source_name }} · {{ article.published_at[:10] if article.published_at else '' }}
+        </p>
+
+        <!-- Title -->
+        <a href="/article/{{ article.id }}"
+           class="block text-base font-semibold text-gray-900 hover:text-brand-600 leading-snug mb-2 transition-colors">
+          {{ article.title }}
+        </a>
+
+        <!-- Summary -->
+        {% if article.summary %}
+        <p class="text-sm text-gray-500 line-clamp-3 leading-relaxed">{{ article.summary }}</p>
+        {% endif %}
+      </div>
+
+      <!-- Footer -->
+      <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+        <a href="/article/{{ article.id }}"
+           class="text-sm text-brand-600 font-medium hover:underline">
+          Read & find contacts →
+        </a>
+        <form method="post" action="/bookmark/{{ article.id }}" class="inline">
+          <button type="submit" title="{% if article.id in bookmarked_ids %}Remove bookmark{% else %}Save{% endif %}"
+                  class="text-gray-300 hover:text-yellow-500 transition-colors">
+            <svg class="w-5 h-5" fill="{% if article.id in bookmarked_ids %}#eab308{% else %}none{% endif %}"
+                 viewBox="0 0 24 24" stroke="{% if article.id in bookmarked_ids %}#eab308{% else %}currentColor{% endif %}" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  <div class="flex justify-between mt-8">
+    {% if page > 1 %}
+    <button onclick="goPage({{ page - 1 }})"
+            class="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50">← Previous</button>
+    {% else %}<span></span>{% endif %}
+    {% if has_next %}
+    <button onclick="goPage({{ page + 1 }})"
+            class="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700">Next →</button>
+    {% endif %}
+  </div>
+
+<script>
+function selectAllSources(check) {
+  document.querySelectorAll('.source-checkbox').forEach(cb => {
+    cb.checked = check;
+    const label = cb.closest('label');
+    label.classList.toggle('bg-brand-600', check);
+    label.classList.toggle('text-white', check);
+    label.classList.toggle('border-brand-600', check);
+    label.classList.toggle('bg-white', !check);
+    label.classList.toggle('text-gray-600', !check);
+    label.classList.toggle('border-gray-300', !check);
+  });
+}
+
+function goPage(p) {
+  const form = document.getElementById('filter-form');
+  // Remove existing page input if any
+  const existing = form.querySelector('input[name="page"]');
+  if (existing) existing.remove();
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'page';
+  input.value = p;
+  form.appendChild(input);
+  form.submit();
+}
+</script>
+
+  {% else %}
+  <!-- Empty state -->
+  <div class="text-center py-20">
+    <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h6"/>
+    </svg>
+    <h3 class="text-lg font-semibold text-gray-500 mb-2">No articles yet</h3>
+    <p class="text-gray-400 text-sm mb-6">Click "Refresh News" to fetch the latest HR & L&D news from India & Middle East.</p>
+    <button onclick="refreshNews()"
+            class="px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 transition-colors">
+      Fetch News Now
+    </button>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
