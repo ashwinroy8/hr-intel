@@ -70,10 +70,22 @@
           {% endfor %}
         </select>
       </div>
+      <!-- People toggle -->
+      <label class="flex items-center gap-2 cursor-pointer select-none self-end pb-2">
+        <div class="relative">
+          <input type="checkbox" name="has_people" value="1" id="has-people-toggle"
+                 {% if has_people == '1' %}checked{% endif %}
+                 class="sr-only peer" onchange="this.form.submit()">
+          <div class="w-10 h-5 bg-gray-200 peer-checked:bg-brand-600 rounded-full transition-colors"></div>
+          <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-all peer-checked:translate-x-5"></div>
+        </div>
+        <span class="text-sm text-gray-700 font-medium">People found only</span>
+      </label>
+
       <button type="submit" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg transition-colors">
         Filter
       </button>
-      {% if q or region != 'All' or category != 'All' or selected_sources %}
+      {% if q or region != 'All' or category != 'All' or selected_sources or has_people == '1' %}
       <a href="/dashboard" class="px-4 py-2 border border-gray-300 text-gray-600 text-sm rounded-lg hover:bg-gray-50">Clear all</a>
       {% endif %}
     </div>

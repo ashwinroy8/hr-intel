@@ -121,7 +121,7 @@ async def get_sources(db) -> list:
         return [r[0] for r in await cursor.fetchall()]
 
 
-async def get_articles(db, region: str = None, category: str = None, sources: list = None, limit: int = 30, offset: int = 0):
+async def get_articles(db, region: str = None, category: str = None, sources: list = None, has_people: bool = False, limit: int = 30, offset: int = 0):
     query = """SELECT a.*, (SELECT COUNT(*) FROM article_people ap WHERE ap.article_id = a.id) as people_count
                FROM articles a WHERE 1=1"""
     params = []
@@ -135,6 +135,8 @@ async def get_articles(db, region: str = None, category: str = None, sources: li
         placeholders = ",".join("?" * len(sources))
         query += f" AND source_name IN ({placeholders})"
         params.extend(sources)
+    if has_people:
+        query += " AND (SELECT COUNT(*) FROM article_people ap WHERE ap.article_id = a.id) > 0"
     query += " ORDER BY fetched_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
     async with db.execute(query, params) as cursor:

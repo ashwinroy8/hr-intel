@@ -175,7 +175,7 @@ async def logout():
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request, region: str = "All", category: str = "All",
-    q: str = "", page: int = 1,
+    q: str = "", page: int = 1, has_people: str = "0",
     conn=Depends(get_db_conn), user=Depends(require_login),
 ):
     limit = 20
@@ -187,6 +187,7 @@ async def dashboard(
     articles = await db.search_articles(conn, q, limit=limit) if q else \
                await db.get_articles(conn, region=region, category=category,
                                      sources=selected_sources or None,
+                                     has_people=(has_people == "1"),
                                      limit=limit, offset=offset)
 
     bookmarked_ids = await db.get_bookmarked_ids(conn, user["id"])
@@ -199,6 +200,7 @@ async def dashboard(
         "bookmarked_ids": bookmarked_ids, "stats": stats,
         "pipeline_counts": pipeline_counts,
         "region": region, "category": category, "q": q,
+        "has_people": has_people,
         "page": page, "has_next": len(articles) == limit,
         "last_fetch": _last_fetch,
         "all_sources": all_sources,

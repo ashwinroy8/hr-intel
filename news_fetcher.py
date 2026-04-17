@@ -139,12 +139,6 @@ RSS_SOURCES = [
         "region": "Global",
         "category": "L&D",
     },
-    {
-        "url": "https://elearningindustry.com/feed",
-        "name": "eLearning Industry",
-        "region": "Global",
-        "category": "L&D",
-    },
 ]
 
 # NewsAPI queries for India & Middle East HR
