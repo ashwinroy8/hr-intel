@@ -236,7 +236,10 @@ async def ensure_extracted(db, article: dict) -> list:
     from database import get_article_people, save_people
 
     if article["people_extracted"]:
-        return await get_article_people(db, article["id"])
+        existing = await get_article_people(db, article["id"])
+        if existing:
+            return existing
+        # Marked as extracted but no people saved — re-extract
 
     body = article.get("body") or article.get("summary") or ""
     if len(body) < 100:

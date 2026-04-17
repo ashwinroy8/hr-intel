@@ -256,6 +256,18 @@ async def trigger_extraction(article_id: int, conn=Depends(get_db_conn), user=De
     return JSONResponse({"count": len(people), "people": people})
 
 
+@app.post("/admin/reset-extraction")
+async def reset_extraction(conn=Depends(get_db_conn), user=Depends(require_login)):
+    """Reset people_extracted flag for articles that have no people saved, so they get re-extracted."""
+    await conn.execute("""
+        UPDATE articles SET people_extracted = 0
+        WHERE people_extracted = 1
+        AND id NOT IN (SELECT DISTINCT article_id FROM article_people)
+    """)
+    await conn.commit()
+    return JSONResponse({"status": "ok", "message": "Reset extraction flag for empty articles"})
+
+
 @app.post("/article/{article_id}/person/{person_id}/outreach")
 async def generate_person_outreach(
     article_id: int, person_id: int,
