@@ -246,15 +246,19 @@ async function triggerExtraction(articleId) {
   showToast('Running AI extraction…', 'info');
   try {
     const r = await fetch(`/article/${articleId}/extract`, {method:'POST'});
-    const d = await r.json();
-    if (d.count > 0) {
+    const d = await r.json().catch(() => null);
+    if (!r.ok) {
+      showToast(`Extraction failed (${r.status}): ${d?.detail || 'server error'}`, 'error');
+      return;
+    }
+    if (d && d.count > 0) {
       showToast(`Found ${d.count} people! Reloading…`, 'success');
       setTimeout(() => location.reload(), 1000);
     } else {
       showToast('No named people found in this article.', 'info');
     }
   } catch(e) {
-    showToast('Extraction failed — check API key.', 'error');
+    showToast(`Extraction error: ${e.message}`, 'error');
   }
 }
 
