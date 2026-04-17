@@ -247,7 +247,7 @@ async def trigger_extraction(article_id: int, conn=Depends(get_db_conn), user=De
     article = await db.get_article(conn, article_id)
     if not article:
         raise HTTPException(status_code=404)
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured on server")
     try:

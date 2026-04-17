@@ -9,7 +9,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_HEADERS = {
     "anthropic-version": "2023-06-01",
