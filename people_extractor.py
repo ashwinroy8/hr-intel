@@ -1,14 +1,36 @@
-"""Claude-powered people extraction from HR news articles."""
+"""Claude-powered people extraction — uses requests directly (no SDK) for Railway compatibility."""
+import asyncio
 import json
 import logging
 import os
 from typing import Optional
 
-import anthropic
+import requests
 
 logger = logging.getLogger(__name__)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_HEADERS = {
+    "anthropic-version": "2023-06-01",
+    "content-type": "application/json",
+}
+
+
+def _headers():
+    return {**ANTHROPIC_HEADERS, "x-api-key": ANTHROPIC_API_KEY}
+
+
+def _call_claude(payload: dict, timeout: int = 40) -> dict:
+    """Synchronous Claude API call via requests. Runs in a thread via asyncio.to_thread."""
+    resp = requests.post(ANTHROPIC_URL, headers=_headers(), json=payload, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ─────────────────────────────────────────────
+# People extraction
+# ─────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are a precise data extraction engine for HR and Learning & Development industry news.
 
@@ -18,168 +40,124 @@ Rules:
 - Only extract people actually named (full name or at least first + last name)
 - Extract their job title/designation EXACTLY as stated in the article
 - Extract company name as stated in the article
-- Extract phone number ONLY if explicitly stated (format: as-is from article)
+- Extract phone number ONLY if explicitly stated in the article
 - Extract email ONLY if explicitly stated in the article
 - Extract LinkedIn URL ONLY if explicitly stated in the article
 - Write a brief 1-sentence context explaining why this person is mentioned
 - Do NOT infer, guess, or hallucinate any contact details
 - Do NOT include fictional, historical, or quoted-as-example persons
 
-Return ONLY a valid JSON array. No markdown fences, no explanation, no preamble.
-If no people are found, return an empty array: []
-
-Example output format:
-[
-  {
-    "name": "Priya Sharma",
-    "designation": "Chief People Officer",
-    "company": "Infosys",
-    "phone": null,
-    "email": null,
-    "linkedin_url": null,
-    "context": "Announced a new hybrid work policy for 300,000 employees across India."
-  }
-]"""
+Return ONLY a valid JSON array. No markdown fences, no explanation.
+If no people are found, return: []"""
 
 
-def _build_user_message(title: str, body: str) -> str:
-    return f"""Article Title: {title}
-
-Article Text:
-{body[:5000]}
-
-Extract all named people from this article."""
-
-
-async def extract_people_from_article(
-    title: str,
-    body: str,
-    article_url: str = "",
-) -> list[dict]:
-    """Call Claude to extract people mentioned in an article.
-    Returns list of person dicts (name, designation, company, phone, email, linkedin_url, context).
-    """
+async def extract_people_from_article(title: str, body: str, article_url: str = "") -> list:
     if not ANTHROPIC_API_KEY:
         logger.warning("ANTHROPIC_API_KEY not set — skipping extraction")
         return []
-
     if not body or len(body.strip()) < 50:
-        logger.debug(f"Article too short for extraction: {title[:60]}")
+        logger.debug(f"Article too short: {title[:60]}")
         return []
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    # Use tool_use to enforce structured JSON output
-    tools = [
-        {
-            "name": "save_people",
-            "description": "Save the list of people extracted from the article.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "people": {
-                        "type": "array",
-                        "description": "List of people found in the article",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string", "description": "Full name of the person"},
-                                "designation": {"type": ["string", "null"], "description": "Job title or designation"},
-                                "company": {"type": ["string", "null"], "description": "Company or organisation name"},
-                                "phone": {"type": ["string", "null"], "description": "Phone number if stated in article"},
-                                "email": {"type": ["string", "null"], "description": "Email address if stated in article"},
-                                "linkedin_url": {"type": ["string", "null"], "description": "LinkedIn profile URL if stated in article"},
-                                "context": {"type": ["string", "null"], "description": "1-sentence context for why person is mentioned"},
+    payload = {
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 2048,
+        "system": SYSTEM_PROMPT,
+        "tools": [
+            {
+                "name": "save_people",
+                "description": "Save extracted people from the article.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "people": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name":         {"type": "string"},
+                                    "designation":  {"type": ["string", "null"]},
+                                    "company":      {"type": ["string", "null"]},
+                                    "phone":        {"type": ["string", "null"]},
+                                    "email":        {"type": ["string", "null"]},
+                                    "linkedin_url": {"type": ["string", "null"]},
+                                    "context":      {"type": ["string", "null"]},
+                                },
+                                "required": ["name"],
                             },
-                            "required": ["name"],
-                        },
-                    }
+                        }
+                    },
+                    "required": ["people"],
                 },
-                "required": ["people"],
-            },
-        }
-    ]
+            }
+        ],
+        "tool_choice": {"type": "auto"},
+        "messages": [
+            {"role": "user", "content": f"Article Title: {title}\n\nArticle Text:\n{body[:5000]}\n\nExtract all named people."}
+        ],
+    }
 
     try:
-        import asyncio
-        response = await asyncio.to_thread(
-            client.messages.create,
-            model="claude-haiku-4-5-20251001",
-            max_tokens=2048,
-            system=SYSTEM_PROMPT,
-            tools=tools,
-            tool_choice={"type": "auto"},
-            messages=[
-                {"role": "user", "content": _build_user_message(title, body)}
-            ],
-        )
-    except anthropic.APIError as e:
-        logger.error(f"Claude API error for article '{title[:60]}': {e}")
+        data = await asyncio.to_thread(_call_claude, payload)
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Claude request failed for '{title[:60]}': {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Claude error for '{title[:60]}': {e}")
         return []
 
     # Parse tool_use response
-    for block in response.content:
-        if block.type == "tool_use" and block.name == "save_people":
-            people = block.input.get("people", [])
+    for block in data.get("content", []):
+        if block.get("type") == "tool_use" and block.get("name") == "save_people":
+            people = block.get("input", {}).get("people", [])
             logger.info(f"Extracted {len(people)} people from: {title[:60]}")
             return _clean_people(people)
 
-    # Fallback: try to parse text content as JSON
-    for block in response.content:
-        if hasattr(block, "text"):
-            text = block.text.strip()
-            # Strip markdown fences if present
+    # Fallback: parse raw text as JSON
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            text = block.get("text", "").strip()
             if text.startswith("```"):
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
+                text = text.split("```")[1].lstrip("json").strip()
             try:
-                data = json.loads(text)
-                if isinstance(data, list):
-                    logger.info(f"Extracted {len(data)} people (text fallback) from: {title[:60]}")
-                    return _clean_people(data)
+                result = json.loads(text)
+                if isinstance(result, list):
+                    return _clean_people(result)
             except json.JSONDecodeError:
                 pass
 
-    logger.debug(f"No people extracted from: {title[:60]}")
+    logger.debug(f"No people found in: {title[:60]}")
     return []
 
 
-def _clean_people(raw: list) -> list[dict]:
-    """Normalise and deduplicate extracted people."""
-    seen_names = set()
-    cleaned = []
+def _clean_people(raw: list) -> list:
+    seen, cleaned = set(), []
     for p in raw:
         if not isinstance(p, dict):
             continue
         name = (p.get("name") or "").strip()
-        if not name or len(name) < 3:
+        if not name or len(name) < 3 or name.lower() in seen:
             continue
-        name_lower = name.lower()
-        if name_lower in seen_names:
-            continue
-        seen_names.add(name_lower)
-
-        # Build LinkedIn search URL if no URL provided but name + company known
+        seen.add(name.lower())
         linkedin_url = p.get("linkedin_url")
         if not linkedin_url:
-            company = p.get("company") or ""
-            search_q = f"{name} {company}".strip()
-            linkedin_url = f"https://www.linkedin.com/search/results/people/?keywords={search_q.replace(' ', '%20')}"
-
-        cleaned.append(
-            {
-                "name": name,
-                "designation": (p.get("designation") or "").strip() or None,
-                "company": (p.get("company") or "").strip() or None,
-                "phone": (p.get("phone") or "").strip() or None,
-                "email": (p.get("email") or "").strip() or None,
-                "linkedin_url": linkedin_url,
-                "context": (p.get("context") or "").strip() or None,
-            }
-        )
+            search_q = f"{name} {p.get('company') or ''}".strip().replace(" ", "%20")
+            linkedin_url = f"https://www.linkedin.com/search/results/people/?keywords={search_q}"
+        cleaned.append({
+            "name": name,
+            "designation": (p.get("designation") or "").strip() or None,
+            "company":     (p.get("company") or "").strip() or None,
+            "phone":       (p.get("phone") or "").strip() or None,
+            "email":       (p.get("email") or "").strip() or None,
+            "linkedin_url": linkedin_url,
+            "context":     (p.get("context") or "").strip() or None,
+        })
     return cleaned
 
+
+# ─────────────────────────────────────────────
+# Outreach email generation
+# ─────────────────────────────────────────────
 
 OUR_COMPANY_CONTEXT = """
 Company: A skilling and employee engagement platform
@@ -192,22 +170,21 @@ Key value propositions:
 """
 
 OUTREACH_SYSTEM_PROMPT = """You are an expert B2B sales copywriter for an HR technology company.
-Write highly personalised, warm, and compelling outreach emails to HR leaders and decision makers.
+Write highly personalised, warm, and compelling outreach emails to HR leaders.
 
 Rules:
-- Reference the specific article/news about the person — show you've done your homework
-- Connect their initiative/challenge directly to how our platform can help
-- Keep it concise: subject line + 4-5 short paragraphs max
-- Tone: warm, peer-to-peer, not pushy or salesy
-- End with a clear but low-pressure call to action (e.g. a 20-min call)
-- Do NOT use generic openers like "I hope this email finds you well"
-- Do NOT use buzzwords like "synergies", "leverage", "game-changer"
-- Make the subject line specific and curiosity-driven
+- Reference the specific article/news about the person
+- Connect their initiative directly to how our platform can help
+- Keep it concise: subject line + 4-5 short paragraphs
+- Tone: warm, peer-to-peer, not pushy
+- End with a low-pressure call to action (20-min call)
+- No generic openers like "I hope this email finds you well"
+- No buzzwords like "synergies", "leverage", "game-changer"
 
 Return in this exact format:
-SUBJECT: <subject line here>
+SUBJECT: <subject line>
 
-<email body here>"""
+<email body>"""
 
 
 async def generate_outreach_email(
@@ -219,54 +196,48 @@ async def generate_outreach_email(
     article_summary: str,
     company_context: str = "",
 ) -> Optional[str]:
-    """Generate a personalised sales outreach email for a person mentioned in an article."""
     if not ANTHROPIC_API_KEY:
         return None
 
-    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-
     effective_context = company_context if company_context else OUR_COMPANY_CONTEXT
 
-    prompt = f"""Write a personalised outreach email to this person:
-
+    prompt = f"""Write a personalised outreach email to:
 Name: {person_name}
 Title: {designation or 'HR Leader'}
 Company: {company or 'their organisation'}
-Why they're relevant: {context or 'mentioned in HR news'}
+Why relevant: {context or 'mentioned in HR news'}
 
-Article that triggered this outreach:
-Title: {article_title}
-Summary: {article_summary[:500] if article_summary else ''}
+Article: {article_title}
+Summary: {article_summary[:400] if article_summary else ''}
 
-Our company background:
-{effective_context}
+Our company:
+{effective_context}"""
 
-Write the outreach email now."""
+    payload = {
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 600,
+        "system": OUTREACH_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": prompt}],
+    }
 
     try:
-        import asyncio
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        response = await asyncio.to_thread(
-            client.messages.create,
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
-            system=OUTREACH_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text.strip()
+        data = await asyncio.to_thread(_call_claude, payload, 30)
+        return data["content"][0]["text"].strip()
     except Exception as e:
-        logger.error(f"Outreach email generation failed for {person_name}: {e}")
+        logger.error(f"Outreach generation failed for {person_name}: {e}")
         return None
 
 
-async def ensure_extracted(db, article: dict) -> list[dict]:
-    """Extract people for an article if not already done. Returns people list."""
+# ─────────────────────────────────────────────
+# Ensure extracted
+# ─────────────────────────────────────────────
+
+async def ensure_extracted(db, article: dict) -> list:
     from database import get_article_people, save_people
 
     if article["people_extracted"]:
         return await get_article_people(db, article["id"])
 
-    # Try to get better body text
     body = article.get("body") or article.get("summary") or ""
     if len(body) < 100:
         from news_fetcher import fetch_article_fulltext
