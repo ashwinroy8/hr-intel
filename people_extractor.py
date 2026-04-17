@@ -67,7 +67,7 @@ async def extract_people_from_article(
         logger.debug(f"Article too short for extraction: {title[:60]}")
         return []
 
-    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
     # Use tool_use to enforce structured JSON output
     tools = [
@@ -101,7 +101,9 @@ async def extract_people_from_article(
     ]
 
     try:
-        response = await client.messages.create(
+        import asyncio
+        response = await asyncio.to_thread(
+            client.messages.create,
             model="claude-haiku-4-5-20251001",
             max_tokens=2048,
             system=SYSTEM_PROMPT,
@@ -242,7 +244,10 @@ Our company background:
 Write the outreach email now."""
 
     try:
-        response = await client.messages.create(
+        import asyncio
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        response = await asyncio.to_thread(
+            client.messages.create,
             model="claude-haiku-4-5-20251001",
             max_tokens=600,
             system=OUTREACH_SYSTEM_PROMPT,
