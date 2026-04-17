@@ -77,6 +77,7 @@ async def extract_people_from_article(title: str, body: str, article_url: str = 
                                 "properties": {
                                     "name":         {"type": "string"},
                                     "designation":  {"type": ["string", "null"]},
+                                    "job_title":    {"type": ["string", "null"]},
                                     "company":      {"type": ["string", "null"]},
                                     "phone":        {"type": ["string", "null"]},
                                     "email":        {"type": ["string", "null"]},
@@ -134,7 +135,7 @@ def _clean_people(raw: list) -> list:
             linkedin_url = f"https://www.linkedin.com/search/results/people/?keywords={search_q}"
         cleaned.append({
             "name": name,
-            "designation": (p.get("designation") or "").strip() or None,
+            "designation": (p.get("designation") or p.get("job_title") or "").strip() or None,
             "company":     (p.get("company") or "").strip() or None,
             "phone":       (p.get("phone") or "").strip() or None,
             "email":       (p.get("email") or "").strip() or None,
