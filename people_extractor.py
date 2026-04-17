@@ -55,7 +55,7 @@ async def extract_people_from_article(title: str, body: str, article_url: str = 
     if not ANTHROPIC_API_KEY:
         logger.warning("ANTHROPIC_API_KEY not set — skipping extraction")
         return []
-    if not body or len(body.strip()) < 50:
+    if not body or len(body.strip()) < 20:
         logger.debug(f"Article too short: {title[:60]}")
         return []
 
@@ -242,12 +242,16 @@ async def ensure_extracted(db, article: dict) -> list:
         # Marked as extracted but no people saved — re-extract
 
     body = article.get("body") or article.get("summary") or ""
-    if len(body) < 100:
-        from news_fetcher import fetch_article_fulltext
-        full = await fetch_article_fulltext(article["source_url"])
-        if full:
-            body = full
+    # Always try to fetch full text — RSS summaries rarely contain names
+    from news_fetcher import fetch_article_fulltext
+    full = await fetch_article_fulltext(article["source_url"])
+    if full and len(full) > len(body):
+        body = full
+        logger.info(f"Fetched fulltext ({len(body)} chars) for: {article['title'][:60]}")
+    else:
+        logger.info(f"Using stored body ({len(body)} chars) for: {article['title'][:60]}")
 
     people = await extract_people_from_article(article["title"], body, article["source_url"])
+    logger.info(f"Extraction result: {len(people)} people for '{article['title'][:60]}'")
     await save_people(db, article["id"], people)
     return people

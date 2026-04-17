@@ -122,7 +122,8 @@ async def get_sources(db) -> list:
 
 
 async def get_articles(db, region: str = None, category: str = None, sources: list = None, limit: int = 30, offset: int = 0):
-    query = "SELECT * FROM articles WHERE 1=1"
+    query = """SELECT a.*, (SELECT COUNT(*) FROM article_people ap WHERE ap.article_id = a.id) as people_count
+               FROM articles a WHERE 1=1"""
     params = []
     if region and region != "All":
         query += " AND region = ?"
