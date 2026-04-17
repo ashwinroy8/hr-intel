@@ -38,6 +38,14 @@ async def lifespan(app: FastAPI):
     await db.init_db()
     logger.info("Database initialised")
 
+    # Create default admin user if no users exist
+    async with aiosqlite.connect(db.DB_PATH) as conn:
+        async with conn.execute("SELECT COUNT(*) FROM users") as cur:
+            count = (await cur.fetchone())[0]
+        if count == 0:
+            await auth_module.register_user(conn, "admin@hrintel.com", "HRIntel@2024", "Admin")
+            logger.info("Default admin user created: admin@hrintel.com / HRIntel@2024")
+
     # Schedule news fetch: daily at 5:30 AM + every 4 hours
     scheduler.add_job(background_news_fetch, CronTrigger(hour=5, minute=30), id="daily_530")
     scheduler.add_job(background_news_fetch, "interval", hours=4, id="every_4h")
