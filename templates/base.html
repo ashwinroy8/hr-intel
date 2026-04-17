@@ -55,6 +55,11 @@
                 {% if request.url.path == '/bookmarks' %}bg-brand-50 text-brand-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         🔖 Saved
       </a>
+      <a href="/targets"
+         class="px-3 py-1.5 rounded-md font-medium transition-colors
+                {% if request.url.path == '/targets' %}bg-brand-50 text-brand-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        🎯 Today's Target
+      </a>
       <a href="/settings"
          class="px-3 py-1.5 rounded-md font-medium transition-colors
                 {% if request.url.path == '/settings' %}bg-brand-50 text-brand-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">

@@ -90,6 +90,36 @@ async def init_db():
         except Exception:
             pass
 
+        # Target companies and contacts tables
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS target_companies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_name TEXT NOT NULL,
+                industry TEXT,
+                region TEXT,
+                signal TEXT,
+                signal_summary TEXT,
+                employee_size TEXT,
+                article_id INTEGER,
+                generated_date TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS target_contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL,
+                name TEXT,
+                title TEXT,
+                role_type TEXT,
+                email TEXT,
+                phone TEXT,
+                linkedin_url TEXT,
+                source TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES target_companies(id)
+            );
+        """)
+
         await db.commit()
 
 
@@ -353,3 +383,96 @@ async def get_stats(db) -> dict:
     async with db.execute("SELECT COUNT(*) FROM article_people WHERE outreach_status = 'Contacted'") as c:
         stats["contacted"] = (await c.fetchone())[0]
     return stats
+
+
+# ─────────────────────────────────────────────
+# Target Companies
+# ─────────────────────────────────────────────
+
+async def get_today_targets(db) -> list:
+    """Return today's target companies with their contacts joined."""
+    from datetime import date
+    today = date.today().isoformat()
+    async with db.execute(
+        "SELECT * FROM target_companies WHERE generated_date = ? ORDER BY id",
+        (today,)
+    ) as cursor:
+        rows = await cursor.fetchall()
+        cols = [d[0] for d in cursor.description]
+        companies = [dict(zip(cols, r)) for r in rows]
+
+    for company in companies:
+        async with db.execute(
+            "SELECT * FROM target_contacts WHERE company_id = ? ORDER BY id",
+            (company["id"],)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+            company["contacts"] = [dict(zip(cols, r)) for r in rows]
+
+    return companies
+
+
+async def save_targets(db, companies: list):
+    """Delete today's existing targets and insert new ones with contacts."""
+    from datetime import date
+    today = date.today().isoformat()
+
+    # Delete today's existing targets and their contacts (via cascade-like approach)
+    async with db.execute(
+        "SELECT id FROM target_companies WHERE generated_date = ?", (today,)
+    ) as cursor:
+        existing_ids = [r[0] for r in await cursor.fetchall()]
+
+    for cid in existing_ids:
+        await db.execute("DELETE FROM target_contacts WHERE company_id = ?", (cid,))
+    if existing_ids:
+        placeholders = ",".join("?" * len(existing_ids))
+        await db.execute(f"DELETE FROM target_companies WHERE id IN ({placeholders})", existing_ids)
+
+    for company in companies:
+        cursor = await db.execute(
+            """INSERT INTO target_companies
+               (company_name, industry, region, signal, signal_summary, employee_size, article_id, generated_date)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                company.get("company_name"),
+                company.get("industry"),
+                company.get("region"),
+                company.get("signal"),
+                company.get("signal_summary"),
+                company.get("employee_size"),
+                company.get("article_id"),
+                today,
+            ),
+        )
+        company_id = cursor.lastrowid
+
+        for contact in company.get("contacts", []):
+            await db.execute(
+                """INSERT INTO target_contacts
+                   (company_id, name, title, role_type, email, phone, linkedin_url, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    company_id,
+                    contact.get("name"),
+                    contact.get("title"),
+                    contact.get("role_type"),
+                    contact.get("email"),
+                    contact.get("phone"),
+                    contact.get("linkedin_url"),
+                    contact.get("source"),
+                ),
+            )
+
+    await db.commit()
+
+
+async def get_target_count_today(db) -> int:
+    """Count of today's target companies."""
+    from datetime import date
+    today = date.today().isoformat()
+    async with db.execute(
+        "SELECT COUNT(*) FROM target_companies WHERE generated_date = ?", (today,)
+    ) as cursor:
+        return (await cursor.fetchone())[0]

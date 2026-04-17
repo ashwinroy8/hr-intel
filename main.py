@@ -509,3 +509,43 @@ async def enrich_person(person_id: int, conn=Depends(get_db_conn), user=Depends(
 @app.get("/api/stats")
 async def api_stats(conn=Depends(get_db_conn), user=Depends(require_login)):
     return await db.get_stats(conn)
+
+
+# ─────────────────────────────────────────────
+# Routes: Today's Target
+# ─────────────────────────────────────────────
+
+@app.get("/targets", response_class=HTMLResponse)
+async def targets_page(request: Request, conn=Depends(get_db_conn), user=Depends(require_login)):
+    from datetime import date
+    today = date.today().isoformat()
+    companies = await db.get_today_targets(conn)
+    count = await db.get_target_count_today(conn)
+    return templates.TemplateResponse("targets.html", {
+        "request": request, "user": user,
+        "companies": companies, "today": today,
+        "count": count,
+    })
+
+
+@app.post("/targets/generate")
+async def generate_targets(request: Request, conn=Depends(get_db_conn), user=Depends(require_login)):
+    from targets import identify_target_companies
+    from enrichment import search_contacts_at_company
+
+    # Get last ~48h articles (limit 100)
+    articles = await db.get_articles(conn, limit=100)
+
+    companies = await identify_target_companies(articles)
+
+    # For each company, fetch key contacts via Apollo
+    for company in companies:
+        try:
+            contacts = await search_contacts_at_company(company["company_name"])
+            company["contacts"] = contacts
+        except Exception as e:
+            logger.error(f"Contact search failed for {company.get('company_name')}: {e}")
+            company["contacts"] = []
+
+    await db.save_targets(conn, companies)
+    return RedirectResponse("/targets", status_code=303)

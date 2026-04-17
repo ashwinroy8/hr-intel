@@ -153,6 +153,107 @@ async def enrich_via_hunter(name: str, company: str) -> dict:
 # Cascade pipeline
 # ─────────────────────────────────────────────
 
+async def search_contacts_at_company(company_name: str) -> list:
+    """
+    Search Apollo People Search API for key contacts at a company.
+    Looks for HR Head, L&D Head, CEO, and Sales Head roles.
+    Returns a list of contact dicts.
+    """
+    if not APOLLO_API_KEY:
+        return []
+
+    role_configs = [
+        {
+            "role_type": "HR Head",
+            "titles": ["CHRO", "Chief People Officer", "HR Director", "VP HR", "Head of HR", "People Director"],
+        },
+        {
+            "role_type": "L&D Head",
+            "titles": ["Chief Learning Officer", "L&D Director", "VP Learning", "Head of Learning", "Learning Director", "Head of L&D"],
+        },
+        {
+            "role_type": "CEO",
+            "titles": ["CEO", "Chief Executive Officer", "Managing Director", "MD"],
+        },
+        {
+            "role_type": "Sales Head",
+            "titles": ["Chief Sales Officer", "VP Sales", "Sales Director", "Head of Sales", "SVP Sales"],
+        },
+    ]
+
+    contacts = []
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        for role_config in role_configs:
+            payload = {
+                "api_key": APOLLO_API_KEY,
+                "q_organization_name": company_name,
+                "person_titles": role_config["titles"],
+                "per_page": 1,
+                "page": 1,
+            }
+            try:
+                resp = await client.post(
+                    "https://api.apollo.io/api/v1/people/search",
+                    json=payload,
+                    headers={"Content-Type": "application/json", "Cache-Control": "no-cache"},
+                )
+                if resp.status_code in (401, 403, 422):
+                    logger.debug(f"Apollo search no result for {role_config['role_type']} at {company_name}: {resp.status_code}")
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError as e:
+                logger.warning(f"Apollo search HTTP error for {role_config['role_type']} at {company_name}: {e.response.status_code}")
+                continue
+            except Exception as e:
+                logger.warning(f"Apollo search failed for {role_config['role_type']} at {company_name}: {e}")
+                continue
+
+            people = data.get("people") or []
+            if not people:
+                continue
+
+            person = people[0]
+            name = person.get("name") or ""
+            title = ""
+            for emp in (person.get("employment_history") or []):
+                if emp.get("current"):
+                    title = emp.get("title") or ""
+                    break
+            if not title:
+                title = (person.get("title") or "")
+
+            # Extract phone
+            phone = None
+            for ph in (person.get("phone_numbers") or []):
+                raw = ph.get("sanitized_number") or ph.get("raw_number")
+                if raw:
+                    phone = raw
+                    break
+
+            # Extract LinkedIn
+            linkedin = person.get("linkedin_url")
+            if linkedin and not linkedin.startswith("http"):
+                linkedin = "https://" + linkedin
+
+            email = person.get("email")
+
+            if name:
+                contacts.append({
+                    "name": name,
+                    "title": title,
+                    "role_type": role_config["role_type"],
+                    "email": email or None,
+                    "phone": phone,
+                    "linkedin_url": linkedin,
+                    "source": "Apollo",
+                })
+                logger.info(f"Apollo found {role_config['role_type']} at {company_name}: {name}")
+
+    return contacts
+
+
 async def enrich_contact(name: str, company: str) -> dict:
     """
     Try Apollo first, fall back to Hunter.
