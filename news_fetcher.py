@@ -139,6 +139,18 @@ RSS_SOURCES = [
         "region": "Global",
         "category": "L&D",
     },
+    {
+        "url": "https://me.peoplemattersglobal.com/feed.rss",
+        "name": "People Matters ME",
+        "region": "Middle East",
+        "category": "HR",
+    },
+    {
+        "url": "https://www.humanresourcesonline.net/rss-feed",
+        "name": "Human Resources Online",
+        "region": "Global",
+        "category": "HR",
+    },
 ]
 
 # NewsAPI queries for India & Middle East HR
