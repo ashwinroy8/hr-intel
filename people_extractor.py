@@ -91,9 +91,9 @@ async def extract_people_from_article(title: str, body: str, article_url: str = 
                 },
             }
         ],
-        "tool_choice": {"type": "auto"},
+        "tool_choice": {"type": "any"},
         "messages": [
-            {"role": "user", "content": f"Article Title: {title}\n\nArticle Text:\n{body[:5000]}\n\nExtract all named people."}
+            {"role": "user", "content": f"Article Title: {title}\n\nArticle Text:\n{body[:5000]}\n\nExtract all named people from this article."}
         ],
     }
 
@@ -106,6 +106,8 @@ async def extract_people_from_article(title: str, body: str, article_url: str = 
         logger.error(f"Claude error for '{title[:60]}': {e}")
         return []
 
+    logger.info(f"Claude response stop_reason={data.get('stop_reason')} content_types={[b.get('type') for b in data.get('content', [])]}")
+
     # Parse tool_use response
     for block in data.get("content", []):
         if block.get("type") == "tool_use" and block.get("name") == "save_people":
@@ -113,20 +115,7 @@ async def extract_people_from_article(title: str, body: str, article_url: str = 
             logger.info(f"Extracted {len(people)} people from: {title[:60]}")
             return _clean_people(people)
 
-    # Fallback: parse raw text as JSON
-    for block in data.get("content", []):
-        if block.get("type") == "text":
-            text = block.get("text", "").strip()
-            if text.startswith("```"):
-                text = text.split("```")[1].lstrip("json").strip()
-            try:
-                result = json.loads(text)
-                if isinstance(result, list):
-                    return _clean_people(result)
-            except json.JSONDecodeError:
-                pass
-
-    logger.debug(f"No people found in: {title[:60]}")
+    logger.warning(f"No tool_use block in Claude response for: {title[:60]}")
     return []
 
 
