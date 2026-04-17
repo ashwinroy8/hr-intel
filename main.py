@@ -256,6 +256,38 @@ async def trigger_extraction(article_id: int, conn=Depends(get_db_conn), user=De
     return JSONResponse({"count": len(people), "people": people})
 
 
+@app.get("/admin/debug-extract/{article_id}")
+async def debug_extract(article_id: int, conn=Depends(get_db_conn), user=Depends(require_login)):
+    """Debug endpoint: shows body text and raw Claude response for an article."""
+    import os
+    from news_fetcher import fetch_article_fulltext
+    from people_extractor import _call_claude, _headers, SYSTEM_PROMPT
+    article = await db.get_article(conn, article_id)
+    if not article:
+        raise HTTPException(status_code=404)
+    body = article.get("body") or article.get("summary") or ""
+    full = await fetch_article_fulltext(article["source_url"])
+    if full and len(full) > len(body):
+        body = full
+        body_source = "fulltext"
+    else:
+        body_source = "stored"
+    payload = {
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 2048,
+        "system": SYSTEM_PROMPT,
+        "tools": [{"name": "save_people", "description": "Save extracted people.", "input_schema": {"type": "object", "properties": {"people": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}}, "required": ["people"]}}],
+        "tool_choice": {"type": "auto"},
+        "messages": [{"role": "user", "content": f"Article Title: {article['title']}\n\nArticle Text:\n{body[:5000]}\n\nExtract all named people."}],
+    }
+    try:
+        import asyncio
+        data = await asyncio.to_thread(_call_claude, payload)
+        return JSONResponse({"body_source": body_source, "body_length": len(body), "body_preview": body[:300], "claude_response": data})
+    except Exception as e:
+        return JSONResponse({"error": str(e), "body_source": body_source, "body_length": len(body)})
+
+
 @app.post("/admin/reset-extraction")
 async def reset_extraction(conn=Depends(get_db_conn), user=Depends(require_login)):
     """Reset people_extracted flag for articles that have no people saved, so they get re-extracted."""
