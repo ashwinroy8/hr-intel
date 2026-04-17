@@ -262,9 +262,12 @@ async function pollExtraction(articleId) {
   try {
     const r = await fetch(`/article/${articleId}/extract`, {method:'POST'});
     const d = await r.json();
-    if (d.count > 0) location.reload();
-    else showToast('Still processing or no people found.', 'info');
-  } catch(e) {}
+    // Always reload — either to show people or to show "no people found"
+    location.reload();
+  } catch(e) {
+    // Retry after 5s on network error
+    setTimeout(() => pollExtraction(articleId), 5000);
+  }
 }
 
 async function generateOutreach(articleId, personId) {
