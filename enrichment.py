@@ -153,14 +153,74 @@ async def enrich_via_hunter(name: str, company: str) -> dict:
 # Cascade pipeline
 # ─────────────────────────────────────────────
 
+async def _search_contacts_via_hunter(company_name: str) -> list:
+    """
+    Use Hunter.io Domain Search to find HR/L&D contacts at a company.
+    Searches by company name and filters by department.
+    """
+    if not HUNTER_API_KEY:
+        return []
+
+    # Map common company names to domains (Hunter needs domain not company name)
+    contacts = []
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            # Hunter domain search by company name — use the "company" param
+            for department in ["human_resources", "executive"]:
+                resp = await client.get(
+                    "https://api.hunter.io/v2/domain-search",
+                    params={
+                        "company": company_name,
+                        "department": department,
+                        "limit": 5,
+                        "api_key": HUNTER_API_KEY,
+                    },
+                )
+                if not resp.is_success:
+                    continue
+                data = resp.json().get("data") or {}
+                for person in data.get("emails") or []:
+                    title = (person.get("position") or "").lower()
+                    # Map to role type
+                    if any(k in title for k in ["chief people", "chro", "hr director", "vp hr", "head of hr", "people officer"]):
+                        role_type = "HR Head"
+                    elif any(k in title for k in ["learning", "l&d", "training", "talent development"]):
+                        role_type = "L&D Head"
+                    elif any(k in title for k in ["ceo", "chief executive", "managing director"]):
+                        role_type = "CEO"
+                    elif any(k in title for k in ["sales", "revenue", "commercial"]):
+                        role_type = "Sales Head"
+                    else:
+                        continue
+
+                    name_parts = [person.get("first_name") or "", person.get("last_name") or ""]
+                    name = " ".join(p for p in name_parts if p).strip()
+                    if name:
+                        contacts.append({
+                            "name": name,
+                            "title": person.get("position") or "",
+                            "role_type": role_type,
+                            "email": person.get("value"),
+                            "phone": None,
+                            "linkedin_url": person.get("linkedin") or None,
+                            "source": "Hunter",
+                        })
+    except Exception as e:
+        logger.warning(f"Hunter domain search failed for {company_name}: {e}")
+
+    return contacts
+
+
 async def search_contacts_at_company(company_name: str) -> list:
     """
-    Search Apollo People Search API for key contacts at a company.
-    Looks for HR Head, L&D Head, CEO, and Sales Head roles.
-    Returns a list of contact dicts.
+    Search for key contacts at a company (HR Head, L&D Head, CEO, Sales Head).
+    Tries Apollo first, falls back to Hunter.io domain search.
     """
-    if not APOLLO_API_KEY:
+    if not APOLLO_API_KEY and not HUNTER_API_KEY:
         return []
+
+    if not APOLLO_API_KEY:
+        return await _search_contacts_via_hunter(company_name)
 
     role_configs = [
         {
@@ -250,6 +310,10 @@ async def search_contacts_at_company(company_name: str) -> list:
                     "source": "Apollo",
                 })
                 logger.info(f"Apollo found {role_config['role_type']} at {company_name}: {name}")
+
+    # Fall back to Hunter if Apollo found nothing
+    if not contacts:
+        return await _search_contacts_via_hunter(company_name)
 
     return contacts
 
