@@ -241,10 +241,18 @@ async def _extract_and_ignore(article: dict):
 
 @app.post("/article/{article_id}/extract")
 async def trigger_extraction(article_id: int, conn=Depends(get_db_conn), user=Depends(require_login)):
+    import os
     article = await db.get_article(conn, article_id)
     if not article:
         raise HTTPException(status_code=404)
-    people = await ensure_extracted(conn, article)
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured on server")
+    try:
+        people = await ensure_extracted(conn, article)
+    except Exception as e:
+        logger.error(f"Extraction error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
     return JSONResponse({"count": len(people), "people": people})
 
 
