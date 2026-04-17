@@ -521,31 +521,43 @@ async def targets_page(request: Request, conn=Depends(get_db_conn), user=Depends
     today = date.today().isoformat()
     companies = await db.get_today_targets(conn)
     count = await db.get_target_count_today(conn)
+    generating = request.query_params.get("generating") == "1" or _targets_generating
     return templates.TemplateResponse("targets.html", {
         "request": request, "user": user,
         "companies": companies, "today": today,
-        "count": count,
+        "count": count, "generating": generating,
     })
+
+
+_targets_generating = False
+
+async def _run_target_generation():
+    global _targets_generating
+    _targets_generating = True
+    try:
+        from targets import identify_target_companies
+        from enrichment import search_contacts_at_company
+        async with aiosqlite.connect(db.DB_PATH) as conn:
+            articles = await db.get_articles(conn, limit=100)
+            companies = await identify_target_companies(articles)
+            for company in companies:
+                try:
+                    contacts = await search_contacts_at_company(company["company_name"])
+                    company["contacts"] = contacts
+                except Exception as e:
+                    logger.error(f"Contact search failed for {company.get('company_name')}: {e}")
+                    company["contacts"] = []
+            await db.save_targets(conn, companies)
+            logger.info(f"Target generation complete: {len(companies)} companies saved")
+    except Exception as e:
+        logger.error(f"Target generation failed: {e}", exc_info=True)
+    finally:
+        _targets_generating = False
 
 
 @app.post("/targets/generate")
 async def generate_targets(request: Request, conn=Depends(get_db_conn), user=Depends(require_login)):
-    from targets import identify_target_companies
-    from enrichment import search_contacts_at_company
-
-    # Get last ~48h articles (limit 100)
-    articles = await db.get_articles(conn, limit=100)
-
-    companies = await identify_target_companies(articles)
-
-    # For each company, fetch key contacts via Apollo
-    for company in companies:
-        try:
-            contacts = await search_contacts_at_company(company["company_name"])
-            company["contacts"] = contacts
-        except Exception as e:
-            logger.error(f"Contact search failed for {company.get('company_name')}: {e}")
-            company["contacts"] = []
-
-    await db.save_targets(conn, companies)
-    return RedirectResponse("/targets", status_code=303)
+    global _targets_generating
+    if not _targets_generating:
+        asyncio.create_task(_run_target_generation())
+    return RedirectResponse("/targets?generating=1", status_code=303)

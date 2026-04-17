@@ -18,18 +18,30 @@
       </p>
     </div>
     <form method="post" action="/targets/generate">
-      <button type="submit"
-              class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg shadow transition-colors flex items-center gap-2">
+      <button type="submit" {% if generating %}disabled{% endif %}
+              class="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-semibold rounded-lg shadow transition-colors flex items-center gap-2">
+        {% if generating %}
+        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        Generating… (takes ~60s)
+        {% else %}
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
         {% if count %}Refresh Targets{% else %}Generate Today's Targets{% endif %}
+        {% endif %}
       </button>
     </form>
   </div>
 
-  {% if companies %}
+  {% if generating and not companies %}
+  <div class="text-center py-20">
+    <div class="w-12 h-12 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-4"></div>
+    <p class="text-gray-600 font-medium">Analysing news articles with Claude AI…</p>
+    <p class="text-sm text-gray-400 mt-1">This takes about 60 seconds. Page will refresh automatically.</p>
+  </div>
+  {% elif companies %}
 
   <!-- Company grid -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -175,4 +187,12 @@
   {% endif %}
 
 </div>
+
+{% if generating %}
+<script>
+  // Auto-refresh every 15 seconds while generating
+  setTimeout(() => location.href = '/targets', 15000);
+</script>
+{% endif %}
+
 {% endblock %}
