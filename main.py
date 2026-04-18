@@ -49,6 +49,9 @@ async def lifespan(app: FastAPI):
     # Schedule news fetch: daily at 5:30 AM + every 4 hours
     scheduler.add_job(background_news_fetch, CronTrigger(hour=5, minute=30), id="daily_530")
     scheduler.add_job(background_news_fetch, "interval", hours=4, id="every_4h")
+
+    # Schedule daily email digest at 7:30 AM
+    scheduler.add_job(background_digest, CronTrigger(hour=7, minute=30), id="daily_digest")
     scheduler.start()
     logger.info("Scheduler started: daily 5:30 AM + every 4 hours")
 
@@ -84,6 +87,12 @@ async def get_db_conn():
 _fetch_lock = asyncio.Lock()
 _last_fetch: Optional[float] = None
 FETCH_COOLDOWN = 60 * 30  # 30 min manual cooldown
+
+
+async def background_digest():
+    from email_digest import send_daily_digest
+    async with aiosqlite.connect(db.DB_PATH) as conn:
+        await send_daily_digest(conn)
 
 
 async def background_news_fetch():
@@ -459,6 +468,28 @@ async def save_settings(
 ):
     await db.save_settings(conn, {"company_name": company_name, "company_context": company_context})
     return RedirectResponse("/settings?saved=1", status_code=302)
+
+
+@app.post("/settings/digest")
+async def save_digest_settings(
+    digest_emails: str = Form(default=""),
+    conn=Depends(get_db_conn), user=Depends(require_login),
+):
+    await db.save_settings(conn, {"digest_emails": digest_emails.strip()})
+    return RedirectResponse("/settings?saved=1", status_code=302)
+
+
+@app.post("/settings/digest/send")
+async def send_digest_now(conn=Depends(get_db_conn), user=Depends(require_login)):
+    from email_digest import send_daily_digest, SMTP_USER, SMTP_PASS
+    if not SMTP_USER or not SMTP_PASS:
+        return JSONResponse({"ok": False, "error": "SMTP_USER and SMTP_PASS not configured in Railway Variables"})
+    try:
+        await send_daily_digest(conn)
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        logger.error(f"Manual digest send failed: {e}")
+        return JSONResponse({"ok": False, "error": str(e)})
 
 
 # ─────────────────────────────────────────────

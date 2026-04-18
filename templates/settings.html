@@ -53,6 +53,43 @@
     </div>
   </form>
 
+  <!-- Email Digest -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-6">
+    <h2 class="font-semibold text-gray-900 text-base mb-1 flex items-center gap-2">
+      <svg class="w-5 h-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+      </svg>
+      Daily Email Digest
+    </h2>
+    <p class="text-xs text-gray-500 mb-5">Sent every morning at 7:30 AM with top articles and contacts found.</p>
+
+    <form method="post" action="/settings/digest" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1.5">Recipient Emails</label>
+        <input type="text" name="digest_emails" value="{{ settings.digest_emails or '' }}"
+               class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+               placeholder="john@company.com, jane@company.com" />
+        <p class="text-xs text-gray-400 mt-1">Separate multiple emails with commas.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="submit"
+                class="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition-colors">
+          Save Recipients
+        </button>
+        <button type="button" onclick="sendTestDigest()"
+                class="px-5 py-2 border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition-colors">
+          Send Test Now
+        </button>
+      </div>
+    </form>
+
+    <div class="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500 space-y-1">
+      <p>Requires these Railway environment variables:</p>
+      <p><code class="bg-gray-100 px-1.5 py-0.5 rounded">SMTP_USER</code> — your Gmail address</p>
+      <p><code class="bg-gray-100 px-1.5 py-0.5 rounded">SMTP_PASS</code> — Gmail App Password (not your regular password)</p>
+    </div>
+  </div>
+
   <!-- Schedule Info -->
   <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-6">
     <h2 class="font-semibold text-gray-900 text-base mb-4 flex items-center gap-2">
@@ -104,4 +141,21 @@
   </div>
 
 </div>
+
+<script>
+async function sendTestDigest() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const r = await fetch('/settings/digest/send', {method: 'POST'});
+    const d = await r.json();
+    btn.textContent = d.ok ? 'Sent! Check your inbox.' : ('Error: ' + (d.error || 'failed'));
+  } catch(e) {
+    btn.textContent = 'Error sending';
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Send Test Now'; }, 4000);
+}
+</script>
+
 {% endblock %}
